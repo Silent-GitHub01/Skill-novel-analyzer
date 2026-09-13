@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>小说分析报告 — {{NOVEL_TITLE}}</title>
+<!-- vis.js for network graph -->
+<script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+<!-- Chart.js for tension curve -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #f8f9fa;
+    --card-bg: #ffffff;
+    --border: #e2e8f0;
+    --text: #1a202c;
+    --text-muted: #64748b;
+    --accent: #6366f1;
+    --accent-light: #e0e7ff;
+    --red: #ef4444;
+    --green: #22c55e;
+    --orange: #f59e0b;
+    --blue: #3b82f6;
+    --purple: #8b5cf6;
+    --teal: #14b8a6;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    padding: 0;
+  }
+
+  /* === Header === */
+  .report-header {
+    background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+    color: white;
+    padding: 48px 32px;
+    text-align: center;
+  }
+  .report-header h1 { font-size: 2rem; font-weight: 700; margin-bottom: 8px; }
+  .report-header .meta { font-size: 0.9rem; opacity: 0.85; }
+  .report-header .tags { margin-top: 12px; }
+  .report-header .tag {
+    display: inline-block;
+    background: rgba(255,255,255,0.2);
+    border-radius: 20px;
+    padding: 4px 14px;
+    font-size: 0.8rem;
+    margin: 0 4px;
+  }
+
+  /* === Layout === */
+  .container { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+
+  /* === Stats Cards === */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 16px;
+    margin-bottom: 40px;
+  }
+  .stat-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    box-shadow: var(--shadow);
+  }
+  .stat-card .number { font-size: 1.8rem; font-weight: 700; color: var(--accent); }
+  .stat-card .label { font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; }
+
+  /* === Section === */
+  .section {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+    margin-bottom: 32px;
+    box-shadow: var(--shadow);
+  }
+  .section h2 {
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section h2 .icon { font-size: 1.4rem; }
+  .section .section-desc { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 20px; }
+
+  /* === Character Network === */
+  #character-network {
+    width: 100%;
+    height: 520px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fafbfc;
+  }
+  .network-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 12px;
+    font-size: 0.8rem;
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 50%; }
+
+  /* === Tension Chart === */
+  .chart-container { position: relative; height: 300px; width: 100%; }
+
+  /* === Chapter Table === */
+  .chapter-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+  .chapter-table th {
+    text-align: left;
+    padding: 10px 12px;
+    background: #f1f5f9;
+    border-bottom: 2px solid var(--border);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .chapter-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  .chapter-table tr:hover { background: #f8fafc; }
+  .chapter-table .ch-title { font-weight: 600; white-space: nowrap; }
+  .chapter-table .ch-summary { max-width: 400px; }
+
+  /* Tension badge */
+  .tension-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+  .tension-low { background: #dcfce7; color: #166534; }
+  .tension-mid { background: #fef9c3; color: #854d0e; }
+  .tension-high { background: #fee2e2; color: #991b1b; }
+
+  /* Plot advance badge */
+  .advance-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: var(--accent-light);
+    color: var(--accent);
+  }
+
+  /* === Worldbuilding === */
+  .wb-category {
+    margin-bottom: 16px;
+  }
+  .wb-category h4 {
+    font-size: 0.9rem;
+    color: var(--accent);
+    margin-bottom: 8px;
+    border-left: 3px solid var(--accent);
+    padding-left: 8px;
+  }
+  .wb-items { padding-left: 16px; }
+  .wb-item {
+    font-size: 0.85rem;
+    padding: 4px 0;
+    color: var(--text);
+  }
+  .wb-item .wb-ch { color: var(--text-muted); font-size: 0.75rem; }
+
+  /* === Logic Chains === */
+  .logic-chain {
+    margin-bottom: 20px;
+    padding: 16px;
+    background: #f8fafc;
+    border-radius: 8px;
+    border-left: 4px solid var(--purple);
+  }
+  .logic-chain h4 { font-size: 0.9rem; margin-bottom: 10px; }
+  .chain-links { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0; }
+  .chain-link {
+    flex: 0 0 auto;
+    max-width: 220px;
+    padding: 8px 12px;
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.8rem;
+    margin: 4px;
+    position: relative;
+  }
+  .chain-link .ch-tag {
+    display: inline-block;
+    background: var(--purple);
+    color: white;
+    font-size: 0.7rem;
+    padding: 1px 6px;
+    border-radius: 3px;
+    margin-bottom: 4px;
+  }
+  .chain-arrow {
+    display: flex;
+    align-items: center;
+    color: var(--text-muted);
+    font-size: 1.2rem;
+    padding: 0 4px;
+  }
+  .chain-type-badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    padding: 1px 8px;
+    border-radius: 10px;
+    margin-bottom: 6px;
+  }
+  .type-causal { background: #dbeafe; color: #1e40af; }
+  .type-foreshadow { background: #fef3c7; color: #92400e; }
+
+  /* === Character List === */
+  .char-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 12px;
+  }
+  .char-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 0.85rem;
+  }
+  .char-card .char-name { font-weight: 700; font-size: 0.95rem; }
+  .char-card .char-aliases { font-size: 0.75rem; color: var(--text-muted); }
+  .char-card .char-desc { margin-top: 6px; font-size: 0.8rem; color: var(--text); }
+  .char-card .char-role {
+    display: inline-block;
+    font-size: 0.7rem;
+    padding: 1px 6px;
+    border-radius: 3px;
+    margin-top: 4px;
+  }
+  .role-主角 { background: #fee2e2; color: #991b1b; }
+  .role-配角 { background: #dbeafe; color: #1e40af; }
+  .role-龙套 { background: #f1f5f9; color: #64748b; }
+
+  /* === Summary Box === */
+  .summary-box {
+    background: linear-gradient(135deg, #f0f4ff 0%, #faf5ff 100%);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 32px;
+  }
+  .summary-box h3 { font-size: 1.1rem; margin-bottom: 12px; }
+  .summary-box p { font-size: 0.9rem; color: var(--text); margin-bottom: 8px; }
+
+  /* === Tabs === */
+  .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 2px solid var(--border); }
+  .tab {
+    padding: 8px 20px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.2s;
+  }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* === Footer === */
+  .report-footer {
+    text-align: center;
+    padding: 32px;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+  }
+
+  @media (max-width: 768px) {
+    .stats-grid { grid-template-columns: repeat(2, 1fr); }
+    #character-network { height: 380px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- === HEADER === -->
+<div class="report-header">
+  <h1>{{NOVEL_TITLE}}</h1>
+  <div class="meta">{{TOTAL_CHAPTERS}} 章 · {{TOTAL_CHARS}} 字 · 分析日期 {{ANALYSIS_DATE}}</div>
+  <div class="tags">
+    <span class="tag">{{GENRE}}</span>
+    <span class="tag">{{THEME_1}}</span>
+    <span class="tag">{{THEME_2}}</span>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- === SUMMARY === -->
+  <div class="summary-box">
+    <h3>故事概要</h3>
+    <p>{{PREMISE}}</p>
+    <p><strong>核心冲突：</strong>{{MAIN_CONFLICT}}</p>
+    <p><strong>主角：</strong>{{PROTAGONIST}}</p>
+  </div>
+
+  <!-- === STATS === -->
+  <div class="stats-grid">
+    <div class="stat-card"><div class="number">{{CHAR_COUNT}}</div><div class="label">人物</div></div>
+    <div class="stat-card"><div class="number">{{LOCATION_COUNT}}</div><div class="label">地点</div></div>
+    <div class="stat-card"><div class="number">{{WB_COUNT}}</div><div class="label">世界观条目</div></div>
+    <div class="stat-card"><div class="number">{{ARC_COUNT}}</div><div class="label">情节弧</div></div>
+    <div class="stat-card"><div class="number">{{FORESHADOW_COUNT}}</div><div class="label">伏笔</div></div>
+    <div class="stat-card"><div class="number">{{FORESHADOW_RESOLVED}}</div><div class="label">已回收</div></div>
+  </div>
+
+  <!-- === TABS === -->
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('network')">人物关系</div>
+    <div class="tab" onclick="switchTab('timeline')">情节时间线</div>
+    <div class="tab" onclick="switchTab('logic')">章节逻辑链</div>
+    <div class="tab" onclick="switchTab('worldbuilding')">世界观</div>
+    <div class="tab" onclick="switchTab('characters')">人物图鉴</div>
+    <div class="tab" onclick="switchTab('chapters')">章节摘要</div>
+  </div>
+
+  <!-- === TAB: CHARACTER NETWORK === -->
+  <div class="tab-content active" id="tab-network">
+    <div class="section">
+      <h2><span class="icon">🕸️</span>人物关系图谱</h2>
+      <div class="section-desc">节点大小反映出场频次，连线粗细反映互动强度，颜色区分关系类型</div>
+      <div id="character-network"></div>
+      <div class="network-legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div>敌对</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#22c55e"></div>盟友</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div>亲属</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#ec4899"></div>恋人</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#3b82f6"></div>师徒</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#8b5cf6"></div>朋友</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#64748b"></div>其他</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- === TAB: TIMELINE === -->
+  <div class="tab-content" id="tab-timeline">
+    <div class="section">
+      <h2><span class="icon">📈</span>情节张力曲线</h2>
+      <div class="section-desc">每章张力等级（1-10），反映剧情节奏与高潮分布</div>
+      <div class="chart-container"><canvas id="tension-chart"></canvas></div>
+    </div>
+    <div class="section">
+      <h2><span class="icon">📚</span>情节弧</h2>
+      <div class="section-desc">主要情节线的起止范围与关键节点</div>
+      <div id="plot-arcs-container"></div>
+    </div>
+  </div>
+
+  <!-- === TAB: LOGIC CHAINS === -->
+  <div class="tab-content" id="tab-logic">
+    <div class="section">
+      <h2><span class="icon">🔗</span>章节逻辑链</h2>
+      <div class="section-desc">因果链与伏笔回收链，揭示叙事结构的内在逻辑</div>
+      <div id="logic-chains-container"></div>
+    </div>
+  </div>
+
+  <!-- === TAB: WORLDBUILDING === -->
+  <div class="tab-content" id="tab-worldbuilding">
+    <div class="section">
+      <h2><span class="icon">🌍</span>世界观设定集</h2>
+      <div class="section-desc">按类别整理的世界观信息</div>
+      <div id="worldbuilding-container"></div>
+    </div>
+  </div>
+
+  <!-- === TAB: CHARACTERS === -->
+  <div class="tab-content" id="tab-characters">
+    <div class="section">
+      <h2><span class="icon">👤</span>人物图鉴</h2>
+      <div class="section-desc">全部出场人物列表，按重要性排序</div>
+      <div class="char-grid" id="characters-container"></div>
+    </div>
+  </div>
+
+  <!-- === TAB: CHAPTERS === -->
+  <div class="tab-content" id="tab-chapters">
+    <div class="section">
+      <h2><span class="icon">📖</span>章节摘要表</h2>
+      <div class="section-desc">逐章摘要、张力等级与剧情推进方向</div>
+      <div style="overflow-x:auto;">
+        <table class="chapter-table" id="chapter-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>章节</th>
+              <th>摘要</th>
+              <th>张力</th>
+              <th>基调</th>
+              <th>推进</th>
+              <th>关键事件</th>
+            </tr>
+          </thead>
+          <tbody id="chapter-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="report-footer">
+  由 Novel Analyzer 技能生成 · {{ANALYSIS_DATE}}
+</div>
+
+<script>
+// ============================================================
+// DATA INJECTION POINT
+// Replace the sample data below with actual analysis results.
+// All data must conform to the schemas in references/output_schemas.md
+// ============================================================
+
+const REPORT_DATA = {
+  // --- Metadata ---
+  title: "{{NOVEL_TITLE}}",
+  totalChapters: {{TOTAL_CHAPTERS}},
+  totalChars: {{TOTAL_CHARS}},
+
+  // --- Character Relationship Graph ---
+  // nodes: [{id, label, group, value, title}]
+  // edges: [{from, to, label, color, width, title}]
+  characterGraph: {
+    nodes: [
+      {id: 1, label: "主角A", group: "protagonist", value: 30, title: "出场45次"},
+      {id: 2, label: "配角B", group: "supporting", value: 15, title: "出场20次"},
+      {id: 3, label: "反派C", group: "antagonist", value: 18, title: "出场25次"},
+    ],
+    edges: [
+      {from: 1, to: 2, label: "盟友", color: "#22c55e", width: 3},
+      {from: 1, to: 3, label: "敌对", color: "#ef4444", width: 4},
+      {from: 2, to: 3, label: "竞争", color: "#64748b", width: 2},
+    ]
+  },
+
+  // --- Tension Curve ---
+  // [{x: chapterIndex, y: tensionLevel, label: chapterTitle}]
+  tensionData: [
+    {x: 0, y: 5, label: "第一章"},
+    {x: 1, y: 4, label: "第二章"},
+    {x: 2, y: 6, label: "第三章"},
+  ],
+
+  // --- Plot Arcs ---
+  // [{name, startChapter, endChapter, description, milestones:[]}]
+  plotArcs: [
+    {name: "开篇弧", startChapter: 0, endChapter: 8, description: "主角登场与世界观铺垫", milestones: [0, 3, 7]},
+  ],
+
+  // --- Logic Chains ---
+  // [{type: "causal"|"foreshadowing", description, links: [{chapter, content, type}]}]
+  logicChains: [
+    {
+      type: "causal",
+      description: "因果链：入学考核 → 引起关注 → 被卷入斗争",
+      links: [
+        {chapter: 0, content: "触发上古阵法", type: "event"},
+        {chapter: 3, content: "被长老收为弟子", type: "event"},
+        {chapter: 7, content: "遭暗杀未遂", type: "event"},
+      ]
+    },
+    {
+      type: "foreshadowing",
+      description: "伏笔链：特殊血脉线索",
+      links: [
+        {chapter: 0, content: "体内异常灵力波动", type: "伏笔"},
+        {chapter: 5, content: "梦境中出现远古影像", type: "呼应"},
+        {chapter: 12, content: "血脉觉醒，身世揭晓", type: "回收"},
+      ]
+    }
+  ],
+
+  // --- Worldbuilding ---
+  // {category: [{content, chapters:[]}]}
+  worldbuilding: {
+    "魔法体系": [
+      {content: "修行者按灵力分为九境，每境三品", chapters: [0, 2, 5]},
+    ],
+    "地理": [
+      {content: "大陆分为东、西、南、北四大域", chapters: [0, 3]},
+    ],
+  },
+
+  // --- Characters ---
+  // [{name, aliases, role, description, appearanceCount}]
+  characters: [
+    {name: "主角A", aliases: ["A少"], role: "主角", description: "故事核心人物", appearanceCount: 45},
+    {name: "配角B", aliases: [], role: "配角", description: "主角的挚友", appearanceCount: 20},
+  ],
+
+  // --- Chapter Summaries ---
+  // [{index, title, summary, tension, tone, advance, events:[]}]
+  chapters: [
+    {index: 0, title: "第一章", summary: "主角入学，展露天赋", tension: 6, tone: "紧张", advance: "起", events: ["触发上古阵法"]},
+  ]
+};
+
+// ============================================================
+// RENDERING LOGIC
+// ============================================================
+
+// --- Tab Switching ---
+function switchTab(tabId) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('tab-' + tabId).classList.add('active');
+  // Redraw network when tab becomes visible
+  if (tabId === 'network' && network) network.fit();
+}
+
+// --- Character Network ---
+var network = null;
+function renderNetwork() {
+  var container = document.getElementById('character-network');
+  var colorMap = {
+    protagonist: {bg: '#ef4444', border: '#dc2626'},
+    supporting: {bg: '#3b82f6', border: '#2563eb'},
+    antagonist: {bg: '#8b5cf6', border: '#7c3aed'},
+    minor: {bg: '#94a3b8', border: '#64748b'},
+  };
+
+  var nodes = REPORT_DATA.characterGraph.nodes.map(function(n) {
+    var c = colorMap[n.group] || colorMap.minor;
+    return {
+      id: n.id,
+      label: n.label,
+      title: n.title || '',
+      value: n.value || 10,
+      shape: 'dot',
+      color: {background: c.bg, border: c.border, highlight: {background: c.bg, border: c.border}},
+      font: {size: 14, color: '#1a202c'}
+    };
+  });
+
+  var edges = REPORT_DATA.characterGraph.edges.map(function(e) {
+    return {
+      from: e.from,
+      to: e.to,
+      label: e.label || '',
+      color: {color: e.color || '#94a3b8', highlight: e.color || '#94a3b8'},
+      width: e.width || 2,
+      font: {size: 11, color: '#64748b', strokeWidth: 0, background: 'rgba(255,255,255,0.7)'},
+      smooth: {type: 'curvedCW', roundness: 0.2}
+    };
+  });
+
+  var data = {nodes: nodes, edges: edges};
+  var options = {
+    physics: {stabilization: true, barnesHut: {gravitationalConstant: -3000}},
+    interaction: {hover: true, tooltipDelay: 200},
+    layout: {improvedLayout: true}
+  };
+  network = new vis.Network(container, data, options);
+}
+
+// --- Tension Chart ---
+function renderTensionChart() {
+  var ctx = document.getElementById('tension-chart').getContext('2d');
+  var data = REPORT_DATA.tensionData;
+
+  // Build gradient
+  var gradient = ctx.createLinearGradient(0, 0, 0, 300);
+  gradient.addColorStop(0, 'rgba(99, 102, 241, 0.3)');
+  gradient.addColorStop(1, 'rgba(99, 102, 241, 0.0)');
+
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: data.map(function(d) { return d.label; }),
+      datasets: [{
+        label: '张力等级',
+        data: data.map(function(d) { return d.y; }),
+        borderColor: '#6366f1',
+        backgroundColor: gradient,
+        fill: true,
+        tension: 0.3,
+        pointRadius: 4,
+        pointBackgroundColor: function(ctx) {
+          var val = ctx.parsed.y;
+          if (val >= 8) return '#ef4444';
+          if (val >= 5) return '#f59e0b';
+          return '#22c55e';
+        },
+        pointBorderColor: '#fff',
+        pointBorderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {min: 0, max: 10, ticks: {stepSize: 2}, title: {display: true, text: '张力等级'}},
+        x: {title: {display: true, text: '章节'}}
+      },
+      plugins: {
+        legend: {display: false},
+        tooltip: {callbacks: {label: function(ctx) { return '张力: ' + ctx.parsed.y + '/10'; }}}
+      }
+    }
+  });
+}
+
+// --- Plot Arcs ---
+function renderPlotArcs() {
+  var container = document.getElementById('plot-arcs-container');
+  var html = '';
+  var arcColors = ['#6366f1', '#22c55e', '#f59e0b', '#ec4899', '#14b8a6', '#8b5cf6'];
+
+  REPORT_DATA.plotArcs.forEach(function(arc, i) {
+    var color = arcColors[i % arcColors.length];
+    html += '<div class="logic-chain" style="border-left-color:' + color + '">';
+    html += '<h4 style="color:' + color + '">' + arc.name + '（第' + arc.startChapter + '-' + arc.endChapter + '章）</h4>';
+    html += '<p style="font-size:0.85rem;color:#64748b;margin-bottom:8px">' + arc.description + '</p>';
+    if (arc.milestones && arc.milestones.length) {
+      html += '<div style="font-size:0.8rem">关键节点：';
+      arc.milestones.forEach(function(m) { html += '<span class="advance-badge" style="margin:2px">第' + m + '章</span> '; });
+      html += '</div>';
+    }
+    html += '</div>';
+  });
+  container.innerHTML = html;
+}
+
+// --- Logic Chains ---
+function renderLogicChains() {
+  var container = document.getElementById('logic-chains-container');
+  var html = '';
+
+  REPORT_DATA.logicChains.forEach(function(chain) {
+    var typeClass = chain.type === 'causal' ? 'type-causal' : 'type-foreshadow';
+    var typeLabel = chain.type === 'causal' ? '因果链' : '伏笔链';
+    html += '<div class="logic-chain">';
+    html += '<span class="chain-type-badge ' + typeClass + '">' + typeLabel + '</span>';
+    html += '<h4>' + chain.description + '</h4>';
+    html += '<div class="chain-links">';
+    chain.links.forEach(function(link, j) {
+      if (j > 0) html += '<div class="chain-arrow">→</div>';
+      html += '<div class="chain-link">';
+      html += '<div class="ch-tag">第' + link.chapter + '章</div>';
+      if (link.type) html += '<div style="font-size:0.7rem;color:#8b5cf6;margin-bottom:2px">' + link.type + '</div>';
+      html += link.content;
+      html += '</div>';
+    });
+    html += '</div></div>';
+  });
+  container.innerHTML = html;
+}
+
+// --- Worldbuilding ---
+function renderWorldbuilding() {
+  var container = document.getElementById('worldbuilding-container');
+  var html = '';
+  var wb = REPORT_DATA.worldbuilding;
+
+  Object.keys(wb).forEach(function(category) {
+    var items = wb[category];
+    if (!items || !items.length) return;
+    html += '<div class="wb-category">';
+    html += '<h4>' + category + '</h4>';
+    html += '<div class="wb-items">';
+    items.forEach(function(item) {
+      var chStr = item.chapters ? item.chapters.map(function(c){return '第'+c+'章';}).join('、') : '';
+      html += '<div class="wb-item">' + item.content + ' <span class="wb-ch">(' + chStr + ')</span></div>';
+    });
+    html += '</div></div>';
+  });
+  container.innerHTML = html;
+}
+
+// --- Characters ---
+function renderCharacters() {
+  var container = document.getElementById('characters-container');
+  var html = '';
+  var roleOrder = {'主角': 0, '配角': 1, '龙套': 2};
+
+  var sorted = REPORT_DATA.characters.slice().sort(function(a, b) {
+    return (roleOrder[a.role] || 3) - (roleOrder[b.role] || 3) || (b.appearanceCount || 0) - (a.appearanceCount || 0);
+  });
+
+  sorted.forEach(function(c) {
+    var roleClass = 'role-' + c.role;
+    html += '<div class="char-card">';
+    html += '<div class="char-name">' + c.name + '</div>';
+    if (c.aliases && c.aliases.length) {
+      html += '<div class="char-aliases">又称：' + c.aliases.join('、') + '</div>';
+    }
+    html += '<div class="char-desc">' + (c.description || '') + '</div>';
+    html += '<span class="char-role ' + roleClass + '">' + c.role + '</span>';
+    if (c.appearanceCount) html += ' <span style="font-size:0.7rem;color:#64748b">出场' + c.appearanceCount + '次</span>';
+    html += '</div>';
+  });
+  container.innerHTML = html;
+}
+
+// --- Chapter Table ---
+function renderChapterTable() {
+  var tbody = document.getElementById('chapter-table-body');
+  var html = '';
+
+  REPORT_DATA.chapters.forEach(function(ch) {
+    var tensionClass = ch.tension >= 7 ? 'tension-high' : (ch.tension >= 4 ? 'tension-mid' : 'tension-low');
+    html += '<tr>';
+    html += '<td>' + ch.index + '</td>';
+    html += '<td class="ch-title">' + ch.title + '</td>';
+    html += '<td class="ch-summary">' + ch.summary + '</td>';
+    html += '<td><span class="tension-badge ' + tensionClass + '">' + ch.tension + '/10</span></td>';
+    html += '<td>' + (ch.tone || '') + '</td>';
+    html += '<td><span class="advance-badge">' + (ch.advance || '') + '</span></td>';
+    html += '<td>' + (ch.events || []).join('；') + '</td>';
+    html += '</tr>';
+  });
+  tbody.innerHTML = html;
+}
+
+// === INIT ===
+window.addEventListener('DOMContentLoaded', function() {
+  renderNetwork();
+  renderTensionChart();
+  renderPlotArcs();
+  renderLogicChains();
+  renderWorldbuilding();
+  renderCharacters();
+  renderChapterTable();
+});
+</script>
+
+</body>
+</html>
